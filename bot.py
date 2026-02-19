@@ -1,40 +1,69 @@
 import os
+import logging
+import asyncio
 import sys
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from typing import Final
 
+from aiogram import Bot, Dispatcher, types, Router
+from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# Хостинг Bothost обычно передает токен аргументом или через переменную
-TOKEN = os.getenv("BOT_TOKEN") or (sys.argv[1] if len(sys.argv) > 1 else None)
+# --- Настройка Логирования ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# текст приветствия
-WELCOME_TEXT = (
-    "👋 Привет!\n\n"
-    "Я — бот сайта coolnexart.online.\n\n"
-    "ℹ️ Я не собираю и не храню никакие личные данные пользователей.\n\n"
-    "Если вы хотите записаться на обучение или задать вопрос преподавателю, "
-    "пожалуйста, свяжитесь напрямую с ним: 👉 @coolnex28\n\n"
-    "💬 Напишите преподавателю, и он лично расскажет вам обо всех деталях."
-)
+# --- Конфигурация ---
+# Адаптируем под Bothost: берем токен из переменной или аргумента
+BOT_TOKEN: Final[str] = os.getenv("TELEGRAM_TOKEN") or os.getenv("BOT_TOKEN") or (sys.argv[1] if len(sys.argv) > 1 else None)
 
-async def start(update, context):
-    """Обработчик команды /start"""
-    await update.message.reply_text(WELCOME_TEXT)
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN is not set.")
+    raise ValueError("Missing BOT_TOKEN variable.")
 
-async def any_message(update, context):
-    """Обработчик любых сообщений"""
-    await update.message.reply_text(WELCOME_TEXT)
+# --- Инициализация Aiogram ---
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+router = Router()
 
-def main():
-    app = Application.builder().token(TOKEN).build()
+# --- Логика Инлайн-Клавиатуры ---
+def get_start_keyboard() -> types.InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    builder.button(
+        text="Телеграм-канал с новостями",
+        url="https://t.me/coolnexart_academy"
+    )
+    builder.button(
+        text="Получить контакт ментора",
+        url="https://t.me/coolnex28"
+    )
+    
+    builder.adjust(1) 
+    return builder.as_markup()
 
-    # /start
-    app.add_handler(CommandHandler("start", start))
-    # все остальные сообщения
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, any_message))
+# --- Обработчик команды /start ---
+@router.message(Command("start"))
+async def command_start_handler(message: types.Message) -> None:
+    welcome_text = (
+        "Привет! Я бот coolnexart.online 🎨\n"
+        "Я не собираю и не храню ваши личные данные."
+    )
+    
+    await message.answer(
+        text=welcome_text,
+        reply_markup=get_start_keyboard()
+    )
 
-    print("Бот запущен...")
-    app.run_polling()
+# --- Главная функция запуска (Polling вместо Webhook) ---
+async def main():
+    dp.include_router(router)
+    logger.info("Бот запущен через Polling...")
+    # Удаляем вебхук на случай, если он был установлен ранее
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    main()
-
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен")
